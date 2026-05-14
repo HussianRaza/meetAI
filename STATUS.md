@@ -29,8 +29,8 @@ First compile takes 2–4 minutes. Subsequent runs are fast (incremental).
 | M3 | Audio capture + live Whisper + Live Session screen | ✅ Done |
 | M4 | KB nudge loop + AI suggestions | ✅ Done |
 | M5 | Library + chat with meetings | ✅ Done |
-| M6 | Post-meeting pipeline + Post-Meeting screen + export | ⬜ Next |
-| M7 | Live Overlay window + content protection | ⬜ Pending |
+| M6 | Post-meeting pipeline + Post-Meeting screen + export | ✅ Done |
+| M7 | Live Overlay window + content protection | ⬜ Next |
 | M8 | Onboarding + auto-detect | ⬜ Pending |
 | M9 | Polish: cold start, memory, telemetry | ⬜ Pending |
 | M10 | MCP server | ⬜ Pending |

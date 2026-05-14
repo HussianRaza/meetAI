@@ -21,6 +21,8 @@ pub struct AppState {
     // M3
     pub whisper_model: stt::WhisperModel,
     pub active_session: tokio::sync::Mutex<Option<ActiveSession>>,
+    // M6
+    pub job_tx: tokio::sync::mpsc::Sender<meeting::JobRequest>,
 }
 
 // ── Settings commands ────────────────────────────────────────────────────────
@@ -222,6 +224,62 @@ async fn chat_query(
     Ok(meeting::ChatResponse { answer, sources })
 }
 
+// ── Post-meeting commands ─────────────────────────────────────────────────────
+
+#[tauri::command]
+async fn meeting_get(
+    id: String,
+    state: State<'_, AppState>,
+) -> Result<meeting::MeetingDetail, String> {
+    meeting::library::get_meeting(&state.pool, &id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn action_item_toggle(
+    id: i64,
+    done: bool,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    meeting::library::toggle_action_item(&state.pool, id, done)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn meeting_notes_save(
+    id: String,
+    notes: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    meeting::library::save_notes(&state.pool, &id, &notes)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn meeting_export_markdown(
+    id: String,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    meeting::library::export_markdown(&state.pool, &id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn meeting_regenerate_summary(
+    id: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    state
+        .job_tx
+        .send(meeting::JobRequest { meeting_id: id, kind: meeting::JobKind::Summarize })
+        .await
+        .map_err(|e| e.to_string())
+}
+
 // ── Meeting commands ─────────────────────────────────────────────────────────
 
 #[tauri::command]
@@ -275,9 +333,27 @@ async fn meeting_start(
 async fn meeting_stop(state: State<'_, AppState>) -> Result<String, String> {
     let mut guard = state.active_session.lock().await;
     let session = guard.take().ok_or("No active meeting")?;
-    meeting::stop_session(session, state.pool.clone())
+    let meeting_id = meeting::stop_session(session, state.pool.clone())
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+
+    // Enqueue post-meeting pipeline
+    let _ = state
+        .job_tx
+        .send(meeting::JobRequest {
+            meeting_id: meeting_id.clone(),
+            kind: meeting::JobKind::Embed,
+        })
+        .await;
+    let _ = state
+        .job_tx
+        .send(meeting::JobRequest {
+            meeting_id: meeting_id.clone(),
+            kind: meeting::JobKind::Summarize,
+        })
+        .await;
+
+    Ok(meeting_id)
 }
 
 // ── Entry point ──────────────────────────────────────────────────────────────
@@ -297,13 +373,28 @@ pub fn run() {
                 // Recover meetings stuck in 'recording' from a crash
                 meeting::session::recover_interrupted(&pool).await;
 
+                // Start job queue task
+                let embed_model = kb::embed::new_handle();
+                let (job_tx, job_rx) =
+                    tokio::sync::mpsc::channel::<meeting::JobRequest>(64);
+                {
+                    let pool2 = pool.clone();
+                    let embed2 = embed_model.clone();
+                    let data2 = data_dir.clone();
+                    let app2 = handle.clone();
+                    tokio::spawn(async move {
+                        meeting::jobs::run_queue(job_rx, pool2, embed2, data2, app2).await;
+                    });
+                }
+
                 handle.manage(AppState {
                     pool,
                     data_dir,
-                    embed_model: kb::embed::new_handle(),
+                    embed_model,
                     watcher_task: tokio::sync::Mutex::new(None),
                     whisper_model: stt::new_handle(),
                     active_session: tokio::sync::Mutex::new(None),
+                    job_tx,
                 });
             });
             Ok(())
@@ -323,6 +414,11 @@ pub fn run() {
             meetings_list,
             meeting_search,
             chat_query,
+            meeting_get,
+            action_item_toggle,
+            meeting_notes_save,
+            meeting_export_markdown,
+            meeting_regenerate_summary,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

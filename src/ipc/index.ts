@@ -78,6 +78,17 @@ export const ipc = {
     invoke("meeting_search", { query }),
   chatQuery: (question: string): Promise<ChatResponse> =>
     invoke("chat_query", { question }),
+
+  // Post-meeting
+  meetingGet: (id: string): Promise<MeetingDetail> => invoke("meeting_get", { id }),
+  actionItemToggle: (id: number, done: boolean): Promise<void> =>
+    invoke("action_item_toggle", { id, done }),
+  meetingNotesSave: (id: string, notes: string): Promise<void> =>
+    invoke("meeting_notes_save", { id, notes }),
+  meetingExportMarkdown: (id: string): Promise<string> =>
+    invoke("meeting_export_markdown", { id }),
+  meetingRegenerateSummary: (id: string): Promise<void> =>
+    invoke("meeting_regenerate_summary", { id }),
 };
 
 export interface MeetingRow {
@@ -100,4 +111,46 @@ export interface SourceMeeting {
 export interface ChatResponse {
   answer: string;
   sources: SourceMeeting[];
+}
+
+export interface SummaryData {
+  overview: string;
+  decisions: string[];
+  topics: string[];
+}
+
+export interface ActionItemData {
+  id: number;
+  text: string;
+  assignee: string | null;
+  due_date: string | null;
+  done: boolean;
+}
+
+export interface SegmentData {
+  source: string;
+  speaker_name: string | null;
+  text: string;
+  start_ms: number;
+  end_ms: number;
+}
+
+export interface JobData {
+  kind: string;
+  status: string;
+  error: string | null;
+}
+
+export interface MeetingDetail {
+  id: string;
+  title: string;
+  status: string;
+  started_at: number;
+  ended_at: number | null;
+  duration_ms: number | null;
+  notes: string | null;
+  summary: SummaryData | null;
+  action_items: ActionItemData[];
+  segments: SegmentData[];
+  jobs: JobData[];
 }

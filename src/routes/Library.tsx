@@ -75,11 +75,11 @@ function MeetingItem({ meeting }: { meeting: MeetingRow }) {
   const navigate = useNavigate();
 
   const handleClick = () => {
-    // M6 will implement the post-meeting view
     if (meeting.status === "recording") {
       navigate("/live");
+    } else {
+      navigate(`/meeting/${meeting.id}`);
     }
-    // else: navigate to /meeting/:id (M6)
   };
 
   return (

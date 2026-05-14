@@ -104,10 +104,18 @@ pub async fn stop_session(session: ActiveSession, pool: SqlitePool) -> Result<St
     .await;
 
     let ended_at = now_millis();
+    let (started_at,): (i64,) = sqlx::query_as("SELECT started_at FROM meetings WHERE id=?")
+        .bind(&meeting_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap_or((ended_at,));
+    let duration_ms = ended_at - started_at;
+
     sqlx::query(
-        "UPDATE meetings SET status='processing', ended_at=? WHERE id=?",
+        "UPDATE meetings SET status='processing', ended_at=?, duration_ms=? WHERE id=?",
     )
     .bind(ended_at)
+    .bind(duration_ms)
     .bind(&meeting_id)
     .execute(&pool)
     .await?;

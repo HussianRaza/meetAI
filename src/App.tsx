@@ -4,6 +4,7 @@ import Settings from "./routes/Settings";
 import LiveSession from "./routes/LiveSession";
 import Library from "./routes/Library";
 import Chat from "./routes/Chat";
+import PostMeeting from "./routes/PostMeeting";
 
 export default function App() {
   return (
@@ -13,6 +14,7 @@ export default function App() {
         <Route path="/live" element={<LiveSession />} />
         <Route path="/library" element={<Library />} />
         <Route path="/chat" element={<Chat />} />
+        <Route path="/meeting/:id" element={<PostMeeting />} />
         <Route path="*" element={<Navigate to="/library" replace />} />
       </Routes>
     </MemoryRouter>
