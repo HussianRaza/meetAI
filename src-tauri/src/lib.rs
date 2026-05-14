@@ -155,6 +155,73 @@ async fn whisper_download_model(
     Ok(())
 }
 
+// ── Library commands ─────────────────────────────────────────────────────────
+
+#[tauri::command]
+async fn meetings_list(
+    state: State<'_, AppState>,
+) -> Result<Vec<meeting::MeetingRow>, String> {
+    meeting::library::list_meetings(&state.pool)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn meeting_search(
+    query: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<meeting::MeetingRow>, String> {
+    meeting::library::search_meetings(&state.pool, &query)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn chat_query(
+    question: String,
+    state: State<'_, AppState>,
+) -> Result<meeting::ChatResponse, String> {
+    let cfg = settings::get(&state.pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let (context, sources) = meeting::library::build_chat_context(&state.pool, &question)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if context.is_empty() {
+        return Ok(meeting::ChatResponse {
+            answer: "No relevant meeting transcripts found for this question. \
+                     Record and process some meetings first."
+                .to_string(),
+            sources: vec![],
+        });
+    }
+
+    let system_msg = "You are a meeting assistant. Answer the user's question using ONLY \
+                      the provided meeting transcript excerpts. \
+                      Cite the meeting name and timestamp when you reference a quote. \
+                      Be concise and factual.";
+    let user_msg = format!(
+        "Meeting transcripts:\n{context}\n\nQuestion: {question}"
+    );
+    let messages = vec![
+        serde_json::json!({"role": "system", "content": system_msg}),
+        serde_json::json!({"role": "user",   "content": user_msg}),
+    ];
+
+    let client = reqwest::Client::new();
+    let answer = tokio::time::timeout(
+        std::time::Duration::from_secs(30),
+        llm::chat(&client, &cfg.groq_key, llm::MODEL_LIVE, messages, 600),
+    )
+    .await
+    .map_err(|_| "Chat timed out after 30 s".to_string())?
+    .map_err(|e| e.to_string())?;
+
+    Ok(meeting::ChatResponse { answer, sources })
+}
+
 // ── Meeting commands ─────────────────────────────────────────────────────────
 
 #[tauri::command]
@@ -253,6 +320,9 @@ pub fn run() {
             whisper_download_model,
             meeting_start,
             meeting_stop,
+            meetings_list,
+            meeting_search,
+            chat_query,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

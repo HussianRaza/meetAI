@@ -2,14 +2,18 @@ import { MemoryRouter, Routes, Route, Navigate } from "react-router-dom";
 import "./App.css";
 import Settings from "./routes/Settings";
 import LiveSession from "./routes/LiveSession";
+import Library from "./routes/Library";
+import Chat from "./routes/Chat";
 
 export default function App() {
   return (
-    <MemoryRouter initialEntries={["/settings"]}>
+    <MemoryRouter initialEntries={["/library"]}>
       <Routes>
         <Route path="/settings" element={<Settings />} />
         <Route path="/live" element={<LiveSession />} />
-        <Route path="*" element={<Navigate to="/settings" replace />} />
+        <Route path="/library" element={<Library />} />
+        <Route path="/chat" element={<Chat />} />
+        <Route path="*" element={<Navigate to="/library" replace />} />
       </Routes>
     </MemoryRouter>
   );

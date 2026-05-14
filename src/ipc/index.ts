@@ -71,4 +71,33 @@ export const ipc = {
   meetingStart: (title: string, platform?: string): Promise<string> =>
     invoke("meeting_start", { title, platform: platform ?? null }),
   meetingStop: (): Promise<string> => invoke("meeting_stop"),
+
+  // Library
+  meetingsList: (): Promise<MeetingRow[]> => invoke("meetings_list"),
+  meetingSearch: (query: string): Promise<MeetingRow[]> =>
+    invoke("meeting_search", { query }),
+  chatQuery: (question: string): Promise<ChatResponse> =>
+    invoke("chat_query", { question }),
 };
+
+export interface MeetingRow {
+  id: string;
+  title: string;
+  platform: string | null;
+  status: "recording" | "processing" | "done" | "error";
+  started_at: number; // unix ms
+  ended_at: number | null;
+  duration_ms: number | null;
+  segment_count: number;
+}
+
+export interface SourceMeeting {
+  id: string;
+  title: string;
+  started_at: number;
+}
+
+export interface ChatResponse {
+  answer: string;
+  sources: SourceMeeting[];
+}
