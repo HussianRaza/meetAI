@@ -80,6 +80,18 @@ export const ipc = {
     invoke("chat_query", { question }),
 
   // Post-meeting
+  // Telemetry
+  logFilePath: (): Promise<string> => invoke("log_file_path"),
+
+  // Auto-detect
+  autoStartEnable: (): Promise<void> => invoke("auto_start_enable"),
+  autoStartDisable: (): Promise<void> => invoke("auto_start_disable"),
+
+  // Overlay
+  overlayShow: (): Promise<void> => invoke("overlay_show"),
+  overlayHide: (): Promise<void> => invoke("overlay_hide"),
+  overlayToggle: (): Promise<void> => invoke("overlay_toggle"),
+
   meetingGet: (id: string): Promise<MeetingDetail> => invoke("meeting_get", { id }),
   actionItemToggle: (id: number, done: boolean): Promise<void> =>
     invoke("action_item_toggle", { id, done }),

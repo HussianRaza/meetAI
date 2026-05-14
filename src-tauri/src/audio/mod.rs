@@ -1,3 +1,4 @@
+pub mod autodetect;
 pub mod mic;
 pub mod system;
 pub mod vad;

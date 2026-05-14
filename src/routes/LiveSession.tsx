@@ -318,13 +318,22 @@ function RecordingPanel() {
               {timer}
             </span>
           </div>
-          <button
-            className="btn btn-sm btn-outline"
-            onClick={handleStop}
-            disabled={stopping}
-          >
-            {stopping ? "Stopping…" : "Stop"}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              className="btn btn-sm btn-outline"
+              onClick={() => ipc.overlayToggle().catch(console.error)}
+              title="Toggle overlay (Ctrl+Shift+O)"
+            >
+              Overlay
+            </button>
+            <button
+              className="btn btn-sm btn-outline"
+              onClick={handleStop}
+              disabled={stopping}
+            >
+              {stopping ? "Stopping…" : "Stop"}
+            </button>
+          </div>
         </header>
 
         {/* Body: transcript + nudge placeholder */}

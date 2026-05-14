@@ -22,6 +22,7 @@ tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
 tauri-plugin-sql = { version = "2", features = ["sqlite"] }
 tauri-plugin-dialog = "2"
+tauri-plugin-global-shortcut = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
@@ -38,4 +39,7 @@ cpal = "0.15"
 hound = "3"
 whisper-rs = "0.16"
 uuid = { version = "1", features = ["v4"] }
+# M9: logging
+log = "0.4"
+simplelog = "0.12"
 

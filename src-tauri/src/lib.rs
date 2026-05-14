@@ -11,7 +11,31 @@ use kb::{embed::EmbedModel, search::SearchResult};
 use meeting::ActiveSession;
 use sqlx::SqlitePool;
 use std::path::PathBuf;
+use std::sync::OnceLock;
 use tauri::{Manager, State};
+
+// ── Crash log ────────────────────────────────────────────────────────────────
+
+static LOG_PATH: OnceLock<PathBuf> = OnceLock::new();
+
+fn install_panic_hook() {
+    std::panic::set_hook(Box::new(|info| {
+        let msg = format!("{info}");
+        eprintln!("[PANIC] {msg}");
+        if let Some(path) = LOG_PATH.get() {
+            use std::io::Write;
+            if let Ok(mut f) =
+                std::fs::OpenOptions::new().append(true).create(true).open(path)
+            {
+                let ts = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs();
+                let _ = writeln!(f, "[{ts}] [PANIC] {msg}");
+            }
+        }
+    }));
+}
 
 pub struct AppState {
     pub pool: SqlitePool,
@@ -23,6 +47,8 @@ pub struct AppState {
     pub active_session: tokio::sync::Mutex<Option<ActiveSession>>,
     // M6
     pub job_tx: tokio::sync::mpsc::Sender<meeting::JobRequest>,
+    // M8
+    pub auto_detect: tokio::sync::Mutex<Option<audio::autodetect::AutoDetectHandle>>,
 }
 
 // ── Settings commands ────────────────────────────────────────────────────────
@@ -308,7 +334,7 @@ async fn meeting_start(
         ai_suggestions: cfg.ai_suggestions_enabled,
         interval_secs: cfg.nudge_interval_secs as u64,
         threshold: cfg.nudge_threshold,
-        groq_key: cfg.groq_key,
+        groq_key: cfg.groq_key.clone(),
     };
 
     let session = meeting::start_session(
@@ -318,7 +344,7 @@ async fn meeting_start(
         state.whisper_model.clone(),
         state.embed_model.clone(),
         state.data_dir.clone(),
-        app,
+        app.clone(),
         nudge_cfg,
     )
     .await
@@ -326,11 +352,25 @@ async fn meeting_start(
 
     let meeting_id = session.meeting_id.clone();
     *guard = Some(session);
+
+    // Protect both windows from screen capture during recording (no-op on Linux)
+    if cfg.screen_share_protection {
+        if let Some(w) = app.get_webview_window("main") {
+            let _ = w.set_content_protected(true);
+        }
+        if let Some(w) = app.get_webview_window("overlay") {
+            let _ = w.set_content_protected(true);
+        }
+    }
+
     Ok(meeting_id)
 }
 
 #[tauri::command]
-async fn meeting_stop(state: State<'_, AppState>) -> Result<String, String> {
+async fn meeting_stop(
+    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+) -> Result<String, String> {
     let mut guard = state.active_session.lock().await;
     let session = guard.take().ok_or("No active meeting")?;
     let meeting_id = meeting::stop_session(session, state.pool.clone())
@@ -353,22 +393,131 @@ async fn meeting_stop(state: State<'_, AppState>) -> Result<String, String> {
         })
         .await;
 
+    // Remove content protection after recording
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.set_content_protected(false);
+    }
+    if let Some(w) = app.get_webview_window("overlay") {
+        let _ = w.set_content_protected(false);
+        let _ = w.hide();
+    }
+
     Ok(meeting_id)
+}
+
+// ── Telemetry commands ───────────────────────────────────────────────────────
+
+#[tauri::command]
+async fn log_file_path(state: State<'_, AppState>) -> Result<String, String> {
+    let path = state.data_dir.join("logs").join("meetai.log");
+    Ok(path.to_string_lossy().to_string())
+}
+
+// ── Auto-detect commands ─────────────────────────────────────────────────────
+
+#[tauri::command]
+async fn auto_start_enable(
+    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+) -> Result<(), String> {
+    let mut guard = state.auto_detect.lock().await;
+    if guard.is_none() {
+        *guard = Some(audio::autodetect::start(app));
+    }
+    Ok(())
+}
+
+#[tauri::command]
+async fn auto_start_disable(state: State<'_, AppState>) -> Result<(), String> {
+    let mut guard = state.auto_detect.lock().await;
+    if let Some(h) = guard.take() {
+        h.stop();
+    }
+    Ok(())
+}
+
+// ── Overlay commands ─────────────────────────────────────────────────────────
+
+#[tauri::command]
+async fn overlay_show(app: tauri::AppHandle) -> Result<(), String> {
+    if let Some(w) = app.get_webview_window("overlay") {
+        w.show().map_err(|e| e.to_string())?;
+        w.set_focus().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+async fn overlay_hide(app: tauri::AppHandle) -> Result<(), String> {
+    if let Some(w) = app.get_webview_window("overlay") {
+        w.hide().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+async fn overlay_toggle(app: tauri::AppHandle) -> Result<(), String> {
+    if let Some(w) = app.get_webview_window("overlay") {
+        if w.is_visible().map_err(|e| e.to_string())? {
+            w.hide().map_err(|e| e.to_string())?;
+        } else {
+            w.show().map_err(|e| e.to_string())?;
+            w.set_focus().map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
 }
 
 // ── Entry point ──────────────────────────────────────────────────────────────
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    install_panic_hook();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_sql::Builder::default().build())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_handler(|app, _shortcut, event| {
+                    use tauri_plugin_global_shortcut::ShortcutState;
+                    if event.state == ShortcutState::Pressed {
+                        if let Some(w) = app.get_webview_window("overlay") {
+                            if let Ok(visible) = w.is_visible() {
+                                if visible {
+                                    let _ = w.hide();
+                                } else {
+                                    let _ = w.show();
+                                    let _ = w.set_focus();
+                                }
+                            }
+                        }
+                    }
+                })
+                .build(),
+        )
         .setup(|app| {
             let handle = app.handle().clone();
             tauri::async_runtime::block_on(async move {
                 let pool = db::init(&handle).await.expect("db init failed");
                 let data_dir = handle.path().app_data_dir().expect("no app data dir");
+
+                // Initialise file logger (writes WARN+ to logs/meetai.log)
+                {
+                    use simplelog::{Config, LevelFilter, WriteLogger};
+                    let log_dir = data_dir.join("logs");
+                    std::fs::create_dir_all(&log_dir).ok();
+                    let log_path = log_dir.join("meetai.log");
+                    if let Ok(file) = std::fs::OpenOptions::new()
+                        .append(true)
+                        .create(true)
+                        .open(&log_path)
+                    {
+                        WriteLogger::init(LevelFilter::Warn, Config::default(), file).ok();
+                    }
+                    LOG_PATH.set(log_path).ok();
+                }
 
                 // Recover meetings stuck in 'recording' from a crash
                 meeting::session::recover_interrupted(&pool).await;
@@ -387,6 +536,16 @@ pub fn run() {
                     });
                 }
 
+                // Start auto-detect if the user had it enabled previously
+                let auto_detect_handle = {
+                    let cfg = settings::get(&pool).await.unwrap_or_default();
+                    if cfg.auto_start {
+                        Some(audio::autodetect::start(handle.clone()))
+                    } else {
+                        None
+                    }
+                };
+
                 handle.manage(AppState {
                     pool,
                     data_dir,
@@ -395,8 +554,43 @@ pub fn run() {
                     whisper_model: stt::new_handle(),
                     active_session: tokio::sync::Mutex::new(None),
                     job_tx,
+                    auto_detect: tokio::sync::Mutex::new(auto_detect_handle),
                 });
             });
+
+            // Create overlay window (hidden; shown during recording via shortcut or meeting_start)
+            let overlay_url = if cfg!(debug_assertions) {
+                tauri::WebviewUrl::External(
+                    "http://localhost:1420/overlay.html"
+                        .parse()
+                        .expect("invalid overlay URL"),
+                )
+            } else {
+                tauri::WebviewUrl::App("overlay.html".into())
+            };
+
+            tauri::WebviewWindowBuilder::new(app, "overlay", overlay_url)
+                .title("MeetAI Overlay")
+                .decorations(false)
+                .transparent(true)
+                .always_on_top(true)
+                .skip_taskbar(true)
+                .inner_size(380.0, 220.0)
+                .position(1540.0, 860.0)
+                .visible(false)
+                .build()
+                .expect("failed to create overlay window");
+
+            // Register Ctrl+Shift+O global shortcut (best-effort; may fail on Wayland)
+            {
+                use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut};
+                let shortcut =
+                    Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::KeyO);
+                if let Err(e) = app.handle().global_shortcut().register(shortcut) {
+                    eprintln!("Warning: could not register global shortcut: {e}");
+                }
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -419,6 +613,12 @@ pub fn run() {
             meeting_notes_save,
             meeting_export_markdown,
             meeting_regenerate_summary,
+            overlay_show,
+            overlay_hide,
+            overlay_toggle,
+            auto_start_enable,
+            auto_start_disable,
+            log_file_path,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

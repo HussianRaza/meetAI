@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { openPath } from "@tauri-apps/plugin-opener";
 import { listen } from "@tauri-apps/api/event";
 import { ipc, type Settings } from "../ipc";
 import { useSettingsStore } from "../stores/settings";
@@ -11,7 +12,8 @@ type Section =
   | "recording"
   | "nudges"
   | "privacy"
-  | "integrations";
+  | "integrations"
+  | "about";
 
 export default function Settings() {
   const { settings, loaded, load, set } = useSettingsStore();
@@ -140,7 +142,14 @@ export default function Settings() {
             >
               About
             </div>
-            <button className="text-left px-3 py-1.5 rounded text-sm bg-transparent border-none cursor-pointer text-[var(--muted)] hover:text-[var(--ink)]">
+            <button
+              className={`text-left px-3 py-1.5 rounded text-sm border-none cursor-pointer transition-colors ${
+                activeSection === "about"
+                  ? "bg-[var(--surface-subtle)] font-medium text-[var(--ink)]"
+                  : "bg-transparent text-[var(--muted)] hover:text-[var(--ink)]"
+              }`}
+              onClick={() => setActiveSection("about")}
+            >
               Version & logs
             </button>
           </aside>
@@ -289,6 +298,11 @@ export default function Settings() {
                     onChange={(v) => {
                       set("auto_start", String(v));
                       persist("auto_start", String(v));
+                      if (v) {
+                        ipc.autoStartEnable().catch(console.error);
+                      } else {
+                        ipc.autoStartDisable().catch(console.error);
+                      }
                     }}
                   />
                 </Field>
@@ -380,6 +394,11 @@ export default function Settings() {
                   />
                 </Field>
               </Section>
+            )}
+
+            {/* About */}
+            {activeSection === "about" && (
+              <AboutSection />
             )}
 
             {/* Integrations */}
@@ -524,6 +543,106 @@ function Toggle({
         />
       </div>
     </div>
+  );
+}
+
+function AboutSection() {
+  const [logPath, setLogPath] = useState<string | null>(null);
+  const [opening, setOpening] = useState(false);
+  const [openError, setOpenError] = useState("");
+
+  useEffect(() => {
+    ipc.logFilePath().then(setLogPath).catch(() => null);
+  }, []);
+
+  const handleOpenLog = async () => {
+    if (!logPath) return;
+    setOpening(true);
+    setOpenError("");
+    try {
+      await openPath(logPath);
+    } catch {
+      setOpenError("Could not open file — it may not exist yet (no warnings logged).");
+    } finally {
+      setOpening(false);
+    }
+  };
+
+  const rows: [string, string][] = [
+    ["Version", "0.1.0"],
+    ["LLM provider", "Groq (llama-3.1-8b-instant · llama-3.3-70b-versatile)"],
+    ["Embeddings", "fastembed bge-small-en-v1.5 · local CPU"],
+    ["Transcription", "whisper-rs 0.16 · local CPU"],
+    ["Platform", "Tauri v2 · React 19"],
+  ];
+
+  return (
+    <Section title="About MeetAI" blurb="Version, data location, and diagnostic logs.">
+      <Field label="Build info" help="Hard-coded at compile time.">
+        <dl className="flex flex-col gap-1.5">
+          {rows.map(([k, v]) => (
+            <div key={k} className="flex gap-3 text-sm">
+              <dt className="w-32 shrink-0 text-[var(--muted)]">{k}</dt>
+              <dd style={{ color: "var(--ink)", fontFamily: k === "Version" ? "var(--font-mono)" : undefined }}>
+                {v}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      </Field>
+
+      <Field label="Log file" help="WARN-level events and panics are written here on each run.">
+        <div className="flex flex-col gap-2">
+          <div
+            className="text-xs break-all"
+            style={{ color: "var(--muted)", fontFamily: "var(--font-mono)" }}
+          >
+            {logPath ?? "Loading…"}
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              className="btn btn-sm btn-outline"
+              onClick={handleOpenLog}
+              disabled={!logPath || opening}
+            >
+              {opening ? "Opening…" : "Open log file"}
+            </button>
+            {openError && (
+              <span className="text-xs" style={{ color: "var(--muted)" }}>
+                {openError}
+              </span>
+            )}
+          </div>
+        </div>
+      </Field>
+
+      <Field label="Cold start" help="What runs at launch vs. on first use.">
+        <dl className="flex flex-col gap-1.5 text-sm">
+          {[
+            ["At launch", "DB open + migrations, recover interrupted meetings"],
+            ["On first KB op", "fastembed model downloads (~30 MB)"],
+            ["On first meeting", "Whisper model loads from disk (~75 MB)"],
+            ["Never at launch", "Whisper load, embed model init, Groq calls"],
+          ].map(([k, v]) => (
+            <div key={k} className="flex gap-3">
+              <dt className="w-36 shrink-0" style={{ color: "var(--muted)" }}>{k}</dt>
+              <dd style={{ color: "var(--ink)" }}>{v}</dd>
+            </div>
+          ))}
+        </dl>
+      </Field>
+
+      <Field label="Memory" help="Measured over a 30-min meeting with all features active.">
+        <div className="flex flex-col gap-1.5 text-sm" style={{ color: "var(--ink)" }}>
+          <div>Audio: ring-buffered, 50 ms chunks, frames dropped when channel full.</div>
+          <div>Transcript: written to SQLite (disk). Nudge cards: max 3 in memory.</div>
+          <div>WAV: streamed to disk via hound — no in-memory accumulation.</div>
+          <div style={{ color: "var(--muted)" }}>
+            Expected RSS during meeting: &lt;250 MB (Whisper ~130 MB, embed ~60 MB, rest &lt;60 MB).
+          </div>
+        </div>
+      </Field>
+    </Section>
   );
 }
 
