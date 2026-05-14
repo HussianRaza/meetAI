@@ -109,23 +109,37 @@ fn capture_via_cpal(
 
 // ── parec (PipeWire-pulse) path ───────────────────────────────────────────────
 
-/// Find the main soundcard monitor source via `pactl list sources short`.
-/// Prefers non-Bluetooth monitors.
+/// Return the monitor source that corresponds to the active default sink.
+/// e.g. if default sink is "bluez_output.AA_BB.1" → "bluez_output.AA_BB.1.monitor"
+fn default_sink_monitor() -> Option<String> {
+    let out = Command::new("pactl").args(["info"]).output().ok()?;
+    let text = String::from_utf8_lossy(&out.stdout);
+    let sink = text
+        .lines()
+        .find(|l| l.starts_with("Default Sink:"))?
+        .split_once(':')?
+        .1
+        .trim()
+        .to_owned();
+    if sink.is_empty() { None } else { Some(format!("{sink}.monitor")) }
+}
+
+/// Find the monitor source to capture.
+/// Primary: default sink's monitor (follows whichever output device is active — BT, HDMI, etc.).
+/// Fallback: first monitor from `pactl list sources short`.
 fn find_pa_monitor() -> Option<String> {
+    if let Some(m) = default_sink_monitor() {
+        return Some(m);
+    }
     let out = Command::new("pactl")
         .args(["list", "sources", "short"])
         .output()
         .ok()?;
     let text = String::from_utf8_lossy(&out.stdout);
-
-    // Collect all monitor sources; sort so non-BT comes first
-    let mut candidates: Vec<String> = text
-        .lines()
+    text.lines()
         .filter(|l| l.contains("monitor"))
         .filter_map(|l| l.split_whitespace().nth(1).map(str::to_owned))
-        .collect();
-    candidates.sort_by_key(|s| if s.contains("bluez") { 1usize } else { 0 });
-    candidates.into_iter().next()
+        .next()
 }
 
 fn capture_via_parec(
