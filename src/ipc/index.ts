@@ -1,0 +1,74 @@
+import { invoke } from "@tauri-apps/api/core";
+
+export interface Settings {
+  groq_key: string;
+  kb_folder: string;
+  nudge_enabled: boolean;
+  ai_suggestions_enabled: boolean;
+  nudge_interval_secs: number;
+  nudge_threshold: number;
+  whisper_model: string;
+  screen_share_protection: boolean;
+  auto_start: boolean;
+  obsidian_vault: string;
+  webhook_url: string;
+  parakeet_enabled: boolean;
+  mcp_enabled: boolean;
+}
+
+export interface KbSearchResult {
+  chunk_id: number;
+  file_path: string;
+  breadcrumb: string;
+  snippet: string;
+  score: number;
+}
+
+export interface DeviceInfo {
+  name: string;
+  kind: "input" | "monitor";
+}
+
+export interface WhisperStatus {
+  ready: boolean;
+  model_name: string;
+  model_path: string;
+}
+
+export interface TranscriptSegment {
+  meeting_id: string;
+  source: "you" | "speaker";
+  text: string;
+  start_ms: number;
+  end_ms: number;
+  is_final: boolean;
+}
+
+export const ipc = {
+  // Settings
+  settingsGet: (): Promise<Settings> => invoke("settings_get"),
+  settingsSet: (key: keyof Settings, value: string): Promise<void> =>
+    invoke("settings_set", { key, value }),
+  groqTestConnection: (key: string): Promise<boolean> =>
+    invoke("groq_test_connection", { key }),
+
+  // KB
+  kbIndexStart: (folder: string): Promise<void> =>
+    invoke("kb_index_start", { folder }),
+  kbReindexAll: (): Promise<void> => invoke("kb_reindex_all"),
+  kbSearch: (query: string, topK?: number): Promise<KbSearchResult[]> =>
+    invoke("kb_search", { query, topK }),
+
+  // Audio / Whisper
+  audioDevicesList: (): Promise<DeviceInfo[]> =>
+    invoke("audio_devices_list"),
+  whisperModelStatus: (): Promise<WhisperStatus> =>
+    invoke("whisper_model_status"),
+  whisperDownloadModel: (modelName: string): Promise<void> =>
+    invoke("whisper_download_model", { modelName }),
+
+  // Meeting
+  meetingStart: (title: string, platform?: string): Promise<string> =>
+    invoke("meeting_start", { title, platform: platform ?? null }),
+  meetingStop: (): Promise<string> => invoke("meeting_stop"),
+};

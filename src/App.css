@@ -1,0 +1,126 @@
+@import url("https://fonts.bunny.net/css?family=instrument-serif:400,400i|dm-mono:400,500|geist:300,400,500,600,700");
+@import "tailwindcss";
+
+:root {
+  --paper: #f5f2ec;
+  --ink: #0d0d0f;
+  --amber: #e8a445;
+  --green: #2d7a5a;
+  --blue: #2a5fac;
+  --red: #c83c3c;
+  --surface: #ffffff;
+  --surface-subtle: #f0ede6;
+  --border: #e2ddd5;
+  --muted: #8a8580;
+
+  font-family: "Geist", system-ui, sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+  font-weight: 400;
+  color: var(--ink);
+  background-color: var(--paper);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+@theme {
+  --color-paper: var(--paper);
+  --color-ink: var(--ink);
+  --color-amber: var(--amber);
+  --color-green: var(--green);
+  --color-blue: var(--blue);
+  --color-red: var(--red);
+  --color-surface: var(--surface);
+  --color-surface-subtle: var(--surface-subtle);
+  --color-border: var(--border);
+  --color-muted: var(--muted);
+
+  --font-serif: "Instrument Serif", Georgia, serif;
+  --font-mono: "DM Mono", "Fira Code", monospace;
+  --font-sans: "Geist", system-ui, sans-serif;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background-color: var(--paper);
+  color: var(--ink);
+}
+
+/* ── Shared UI primitives ────────────────────────────────────────────── */
+
+.input {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 13px;
+  color: var(--ink);
+  outline: none;
+  transition: border-color 0.15s;
+}
+.input:focus {
+  border-color: var(--ink);
+}
+.input::placeholder {
+  color: var(--muted);
+}
+
+.btn {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 13px;
+  font-family: var(--font-sans);
+  color: var(--ink);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+.btn:hover {
+  background: var(--surface-subtle);
+}
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.select {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 13px;
+  color: var(--ink);
+  font-family: var(--font-sans);
+  outline: none;
+  cursor: pointer;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  font-weight: 500;
+}
+.badge.ok {
+  background: #d4ede3;
+  color: var(--green);
+}
+.badge.info {
+  background: var(--surface-subtle);
+  color: var(--muted);
+}
+.badge.muted {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
