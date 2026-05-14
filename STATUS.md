@@ -35,8 +35,8 @@ First compile takes ~10 min (whisper.cpp C++ build). Subsequent runs are increme
 | M7 | Live Overlay window + content protection | ✅ Done |
 | M8 | Onboarding + auto-detect | ✅ Done |
 | M9 | Polish: cold start, memory, telemetry | ✅ Done |
-| M10 | MCP server | ⬜ Next |
-| M11 | Parakeet sidecar | ⬜ Pending |
+| M10 | MCP server | ✅ Done |
+| M11 | Parakeet sidecar | ⬜ Next |
 
 ---
 
@@ -126,6 +126,7 @@ uuid = { version = "1", features = ["v4"] }
 | `auto_start_enable()` | `()` | M8 |
 | `auto_start_disable()` | `()` | M8 |
 | `log_file_path()` | `String` | M9 |
+| `mcp_snippet()` | `String` | M10 |
 
 ---
 
@@ -292,23 +293,36 @@ Fonts: Instrument Serif (headings), DM Mono (labels/code), Geist (UI).
 
 ---
 
-## M10 — What to build next
+## M10 — MCP server ✅
 
-**Goal:** Local stdio MCP server exposing meetings to Claude Desktop / Cursor.
+- `src-tauri/src/bin/meetai_mcp.rs` — standalone stdio MCP server binary (no Tauri dependency)
+  - Reads newline-delimited JSON-RPC 2.0 from stdin, writes responses to stdout
+  - MCP protocol v2024-11-05: handles `initialize`, `ping`, `tools/list`, `tools/call`, `resources/list`, `prompts/list`
+  - DB path: `--db /path/to/meetai.db` arg, falls back to `$XDG_DATA_HOME/com.hussain.meetai/meetai.db`
+  - Opens SQLite read-only via sqlx (WAL mode supports concurrent read from running app)
+  - 4 tools: `search_meetings`, `get_meeting_transcript`, `get_action_items`, `get_recent_meetings`
+  - No external deps beyond existing Cargo.toml (sqlx, serde_json, tokio, anyhow)
+  - Build: `cargo build --release --bin meetai_mcp` → binary at `target/release/meetai_mcp`
+- `mcp_snippet()` command — returns ready-to-paste JSON config for Claude Desktop
+  - Uses `current_exe().parent().join("meetai-mcp")` for binary path + `data_dir/meetai.db` for DB path
+- Settings › Integrations MCP toggle now shows `McpSnippetBlock` when enabled:
+  - Code block with the pre-filled JSON config
+  - "Copy config" button
+  - One-liner build command shown inline
 
-### Work
+**To use with Claude Desktop:**
+1. `cargo build --release --bin meetai_mcp`
+2. Enable MCP in Settings → Integrations
+3. Copy the config snippet shown → paste into `~/.config/Claude/claude_desktop_config.json`
+4. Restart Claude Desktop → four MeetAI tools appear
 
-1. New Cargo binary `meetai-mcp` in `src-tauri/src/bin/meetai_mcp.rs`
-2. Add to `tauri.conf.json` `bundle.externalBin` so it's bundled with the app
-3. Implement stdio JSON-RPC loop reading `{"jsonrpc":"2.0","method":...}` from stdin, writing responses to stdout
-4. Tools to expose:
-   - `search_meetings(query: string)` — LIKE search across title + transcript
-   - `get_meeting_transcript(id: string)` — full transcript segments
-   - `get_action_items(meeting_id?: string)` — action items (all or for one meeting)
-   - `get_recent_meetings(n: number)` — latest N meetings with status/summary
-5. Server reads from same `meetai.db` (read-only sqlx pool is fine from a separate process)
-6. Settings › Integrations: "Enable MCP server" toggle already exists — add a code-block showing the JSON config snippet to paste into Claude Desktop
-7. `mcp_snippet` command returns the pre-filled config JSON as a string
+---
+
+## M11 — What to build next (final milestone)
+
+**Goal:** Higher-accuracy post-meeting retranscription via Parakeet TDT sidecar.
+
+This milestone is optional and complex (Python + PyInstaller packaging). Deferred to after the app is running end-to-end.
 
 ---
 

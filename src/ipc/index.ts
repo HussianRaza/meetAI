@@ -80,8 +80,9 @@ export const ipc = {
     invoke("chat_query", { question }),
 
   // Post-meeting
-  // Telemetry
+  // Telemetry / info
   logFilePath: (): Promise<string> => invoke("log_file_path"),
+  mcpSnippet: (): Promise<string> => invoke("mcp_snippet"),
 
   // Auto-detect
   autoStartEnable: (): Promise<void> => invoke("auto_start_enable"),

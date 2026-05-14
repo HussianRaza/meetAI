@@ -405,12 +405,34 @@ async fn meeting_stop(
     Ok(meeting_id)
 }
 
-// ── Telemetry commands ───────────────────────────────────────────────────────
+// ── Telemetry / info commands ─────────────────────────────────────────────────
 
 #[tauri::command]
 async fn log_file_path(state: State<'_, AppState>) -> Result<String, String> {
     let path = state.data_dir.join("logs").join("meetai.log");
     Ok(path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+async fn mcp_snippet(state: State<'_, AppState>) -> Result<String, String> {
+    let db_path = state.data_dir.join("meetai.db");
+
+    // Best-effort: find meetai-mcp next to the running executable
+    let bin_path = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|d| d.join("meetai-mcp")))
+        .unwrap_or_else(|| PathBuf::from("meetai-mcp"));
+
+    let snippet = serde_json::json!({
+        "mcpServers": {
+            "meetai": {
+                "command": bin_path.to_string_lossy(),
+                "args": ["--db", db_path.to_string_lossy()]
+            }
+        }
+    });
+
+    Ok(serde_json::to_string_pretty(&snippet).unwrap())
 }
 
 // ── Auto-detect commands ─────────────────────────────────────────────────────
@@ -619,6 +641,7 @@ pub fn run() {
             auto_start_enable,
             auto_start_disable,
             log_file_path,
+            mcp_snippet,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -445,15 +445,18 @@ export default function Settings() {
                 </Field>
 
                 <Field label="MCP server" help="Exposes meetings to Claude Desktop / Cursor via a local stdio server.">
-                  <Toggle
-                    label="Enable MCP server"
-                    sub="Lets external AI tools query your meeting history."
-                    checked={settings.mcp_enabled}
-                    onChange={(v) => {
-                      set("mcp_enabled", String(v));
-                      persist("mcp_enabled", String(v));
-                    }}
-                  />
+                  <div className="flex flex-col gap-4">
+                    <Toggle
+                      label="Enable MCP server"
+                      sub="Lets external AI tools query your meeting history."
+                      checked={settings.mcp_enabled}
+                      onChange={(v) => {
+                        set("mcp_enabled", String(v));
+                        persist("mcp_enabled", String(v));
+                      }}
+                    />
+                    {settings.mcp_enabled && <McpSnippetBlock />}
+                  </div>
                 </Field>
               </Section>
             )}
@@ -541,6 +544,56 @@ function Toggle({
             checked ? "translate-x-4" : "translate-x-0.5"
           }`}
         />
+      </div>
+    </div>
+  );
+}
+
+function McpSnippetBlock() {
+  const [snippet, setSnippet] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    ipc.mcpSnippet().then(setSnippet).catch(() => null);
+  }, []);
+
+  const handleCopy = async () => {
+    if (!snippet) return;
+    await navigator.clipboard.writeText(snippet).catch(console.error);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="text-xs leading-relaxed" style={{ color: "var(--muted)" }}>
+        First build the MCP binary, then paste this config into{" "}
+        <span style={{ fontFamily: "var(--font-mono)" }}>
+          ~/.config/Claude/claude_desktop_config.json
+        </span>
+        :
+      </div>
+      <div
+        className="text-xs p-3 rounded border border-[var(--border)] whitespace-pre overflow-x-auto"
+        style={{
+          background: "var(--surface-subtle)",
+          fontFamily: "var(--font-mono)",
+          color: "var(--ink)",
+          lineHeight: 1.6,
+        }}
+      >
+        {snippet ?? "Loading…"}
+      </div>
+      <div className="flex items-center gap-3">
+        <button className="btn btn-sm btn-outline" onClick={handleCopy} disabled={!snippet}>
+          {copied ? "Copied!" : "Copy config"}
+        </button>
+        <span className="text-xs" style={{ color: "var(--muted)", fontFamily: "var(--font-mono)" }}>
+          Build binary:{" "}
+          <span style={{ color: "var(--ink)" }}>
+            cargo build --release --bin meetai-mcp
+          </span>
+        </span>
       </div>
     </div>
   );
