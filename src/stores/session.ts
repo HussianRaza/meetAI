@@ -2,7 +2,16 @@ import { create } from "zustand";
 import type { TranscriptSegment } from "../ipc";
 
 export interface SessionEntry extends TranscriptSegment {
-  id: string; // client-side id for React key
+  id: string; // client-side key
+}
+
+export interface NudgeCard {
+  id: string;
+  file_path: string;
+  breadcrumb: string;
+  snippet: string;
+  score: number;
+  suggestion: string | null;
 }
 
 interface SessionStore {
@@ -11,12 +20,13 @@ interface SessionStore {
   title: string;
   startedAt: number | null;
   transcript: SessionEntry[];
+  nudgeCards: NudgeCard[]; // most-recent first, max 3
 
-  // Actions
   setTitle: (t: string) => void;
   startRecording: (meetingId: string, title: string) => void;
   stopRecording: () => void;
   addSegment: (seg: TranscriptSegment) => void;
+  addNudgeCard: (card: NudgeCard) => void;
   reset: () => void;
 }
 
@@ -28,6 +38,7 @@ export const useSessionStore = create<SessionStore>((set) => ({
   title: "",
   startedAt: null,
   transcript: [],
+  nudgeCards: [],
 
   setTitle: (t) => set({ title: t }),
 
@@ -38,6 +49,7 @@ export const useSessionStore = create<SessionStore>((set) => ({
       title,
       startedAt: Date.now(),
       transcript: [],
+      nudgeCards: [],
     }),
 
   stopRecording: () =>
@@ -45,10 +57,13 @@ export const useSessionStore = create<SessionStore>((set) => ({
 
   addSegment: (seg) =>
     set((s) => ({
-      transcript: [
-        ...s.transcript,
-        { ...seg, id: `seg-${++_counter}` },
-      ],
+      transcript: [...s.transcript, { ...seg, id: `seg-${++_counter}` }],
+    })),
+
+  // Prepend new card (newest first), keep max 3
+  addNudgeCard: (card) =>
+    set((s) => ({
+      nudgeCards: [card, ...s.nudgeCards].slice(0, 3),
     })),
 
   reset: () =>
@@ -58,5 +73,6 @@ export const useSessionStore = create<SessionStore>((set) => ({
       title: "",
       startedAt: null,
       transcript: [],
+      nudgeCards: [],
     }),
 }));

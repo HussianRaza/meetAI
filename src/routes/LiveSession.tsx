@@ -4,6 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { ipc } from "../ipc";
 import type { WhisperStatus, TranscriptSegment } from "../ipc";
 import { useSessionStore } from "../stores/session";
+import type { NudgeCard } from "../stores/session";
 import Sidebar from "../components/Sidebar";
 
 // ── Setup panel (before meeting starts) ─────────────────────────────────────
@@ -198,22 +199,78 @@ function useTimer(startedAt: number | null) {
   return `${m}:${String(s % 60).padStart(2, "0")}`;
 }
 
+// ── Nudge card component ─────────────────────────────────────────────────────
+
+function NudgeCardView({ card, opacity }: { card: NudgeCard; opacity: number }) {
+  const pct = Math.round(card.score * 100);
+  return (
+    <div
+      className="flex flex-col gap-2 p-3 rounded border border-[var(--border)]"
+      style={{
+        background: "var(--paper)",
+        opacity,
+        transition: "opacity 0.4s",
+      }}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <div
+          className="text-[10px] truncate"
+          style={{ color: "var(--muted)", fontFamily: "var(--font-mono)" }}
+          title={card.breadcrumb}
+        >
+          {card.breadcrumb || card.file_path.split("/").pop()}
+        </div>
+        <span
+          className="shrink-0 text-[10px] px-1.5 py-0.5 rounded"
+          style={{
+            background: "var(--surface-subtle)",
+            color: "var(--muted)",
+            fontFamily: "var(--font-mono)",
+          }}
+        >
+          {pct}%
+        </span>
+      </div>
+      <div className="text-xs leading-relaxed" style={{ color: "var(--ink)" }}>
+        {card.snippet}
+      </div>
+      {card.suggestion && (
+        <div
+          className="text-xs leading-relaxed mt-1 pt-2 border-t border-[var(--border)]"
+          style={{ color: "var(--amber)", fontFamily: "var(--font-serif)", fontStyle: "italic" }}
+        >
+          {card.suggestion}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Recording panel ──────────────────────────────────────────────────────────
+
 function RecordingPanel() {
   const navigate = useNavigate();
-  const { title, startedAt, transcript, stopRecording } =
+  const { title, startedAt, transcript, nudgeCards, stopRecording } =
     useSessionStore();
   const timer = useTimer(startedAt);
   const bottomRef = useRef<HTMLDivElement>(null);
   const [stopping, setStopping] = useState(false);
 
-  // Subscribe to transcript-segment events
+  // Subscribe to transcript-segment and nudge-update events
   useEffect(() => {
-    const { addSegment } = useSessionStore.getState();
-    const unlisten = listen<TranscriptSegment>("transcript-segment", (e) => {
+    const { addSegment, addNudgeCard } = useSessionStore.getState();
+
+    const unlistenTranscript = listen<TranscriptSegment>("transcript-segment", (e) => {
       addSegment(e.payload);
     });
+
+    const unlistenNudge = listen<NudgeCard>("nudge-update", (e) => {
+      addNudgeCard(e.payload);
+    });
+
     return () => {
-      unlisten.then((f) => f());
+      unlistenTranscript.then((f) => f());
+      unlistenNudge.then((f) => f());
     };
   }, []);
 
@@ -318,7 +375,7 @@ function RecordingPanel() {
             </div>
           </div>
 
-          {/* Nudge panel placeholder */}
+          {/* Nudge panel */}
           <div
             className="w-72 shrink-0 flex flex-col"
             style={{ background: "var(--surface)" }}
@@ -329,11 +386,23 @@ function RecordingPanel() {
             >
               AI Nudges
             </div>
-            <div
-              className="flex-1 flex items-center justify-center text-sm px-6 text-center"
-              style={{ color: "var(--muted)", fontFamily: "var(--font-mono)" }}
-            >
-              KB nudges coming in M4
+            <div className="flex-1 overflow-y-auto px-3 py-3 flex flex-col gap-2">
+              {nudgeCards.length === 0 ? (
+                <div
+                  className="text-xs mt-4 text-center"
+                  style={{ color: "var(--muted)", fontFamily: "var(--font-mono)" }}
+                >
+                  Listening for KB matches…
+                </div>
+              ) : (
+                nudgeCards.map((card, i) => (
+                  <NudgeCardView
+                    key={card.id}
+                    card={card}
+                    opacity={i === 0 ? 1 : i === 1 ? 0.6 : 0.3}
+                  />
+                ))
+              )}
             </div>
           </div>
         </div>

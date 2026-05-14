@@ -12,6 +12,8 @@ use tauri::Emitter;
 use tokio::sync::mpsc;
 
 use crate::audio::{self, vad::EnergyVad, AudioSource};
+use crate::kb::embed::EmbedModel;
+use crate::nudge::{self, NudgeSettings};
 use crate::stt;
 
 // ── Public structs ────────────────────────────────────────────────────────────
@@ -20,6 +22,7 @@ pub struct ActiveSession {
     pub meeting_id: String,
     stop: Arc<AtomicBool>,
     engine: tokio::task::JoinHandle<()>,
+    nudge: Option<tokio::task::JoinHandle<()>>,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -34,14 +37,16 @@ pub struct TranscriptSegmentEvent {
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
-/// Create a meeting record in the DB and start the audio pipeline.
+/// Create a meeting record in the DB and start the audio + nudge pipelines.
 pub async fn start_session(
     title: String,
     platform: Option<String>,
     pool: SqlitePool,
     whisper_model: stt::WhisperModel,
+    embed_model: EmbedModel,
     data_dir: PathBuf,
     app: tauri::AppHandle,
+    nudge_settings: NudgeSettings,
 ) -> Result<ActiveSession> {
     let meeting_id = uuid::Uuid::new_v4().to_string();
     let now_ms = now_millis();
@@ -57,6 +62,16 @@ pub async fn start_session(
     .await?;
 
     let stop = Arc::new(AtomicBool::new(false));
+
+    let nudge = nudge::start(
+        meeting_id.clone(),
+        nudge_settings,
+        pool.clone(),
+        embed_model,
+        stop.clone(),
+        app.clone(),
+    );
+
     let engine = launch_engine(
         meeting_id.clone(),
         stop.clone(),
@@ -66,7 +81,7 @@ pub async fn start_session(
         app,
     );
 
-    Ok(ActiveSession { meeting_id, stop, engine })
+    Ok(ActiveSession { meeting_id, stop, engine, nudge })
 }
 
 /// Stop recording: signal the pipeline, wait for it, update the DB record.
@@ -76,7 +91,12 @@ pub async fn stop_session(session: ActiveSession, pool: SqlitePool) -> Result<St
     // Signal all threads/tasks to stop
     session.stop.store(true, Ordering::Relaxed);
 
-    // Give the engine up to 8 s to flush pending Whisper jobs
+    // Stop nudge engine (fast — it polls every 100 ms)
+    if let Some(nudge) = session.nudge {
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(2), nudge).await;
+    }
+
+    // Give the audio engine up to 8 s to flush pending Whisper jobs
     let _ = tokio::time::timeout(
         std::time::Duration::from_secs(8),
         session.engine,

@@ -1,7 +1,9 @@
 mod audio;
 mod db;
 mod kb;
+mod llm;
 mod meeting;
+mod nudge;
 mod settings;
 mod stt;
 
@@ -176,13 +178,23 @@ async fn meeting_start(
         .await
         .map_err(|e| e.to_string())?;
 
+    let nudge_cfg = nudge::NudgeSettings {
+        enabled: cfg.nudge_enabled,
+        ai_suggestions: cfg.ai_suggestions_enabled,
+        interval_secs: cfg.nudge_interval_secs as u64,
+        threshold: cfg.nudge_threshold,
+        groq_key: cfg.groq_key,
+    };
+
     let session = meeting::start_session(
         title,
         platform,
         state.pool.clone(),
         state.whisper_model.clone(),
+        state.embed_model.clone(),
         state.data_dir.clone(),
         app,
+        nudge_cfg,
     )
     .await
     .map_err(|e| e.to_string())?;
